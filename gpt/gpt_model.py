@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.nn import functional as F
+import sentencepiece as spm
 
 torch.manual_seed(1337)
 
@@ -15,7 +16,7 @@ else:
 # hyperparameters
 batch_size = 32
 block_size = 64
-max_iters = 5000
+max_iters = 10000
 eval_interval = 500
 learning_rate = 3e-4
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -28,23 +29,19 @@ dropout = 0.15
 
 torch.manual_seed(1337)
 
-with open('input.txt', 'r') as f:
-    text = f.read()
-
-# Character set
-chars = sorted(list(set(text)))
-vocab_size = len(chars)
-
-# Mapping characters to integers
-stoi = {ch: i for i, ch in enumerate(chars)}
-itos = {i: ch for i, ch in enumerate(chars)}
-# Encoding and decoding functions
-encode = lambda s: [stoi[c] for c in s]
-decode = lambda l: ''.join([itos[i] for i in l])
+# ---------------------- INPUT PROCESSING ----------------------
+with open('input.txt', 'r', encoding='utf-8') as f:
+    raw_text = f.read()
+sp = spm.SentencePieceProcessor()
+sp.load("tok600.model")
+tokenized_text = sp.encode(raw_text)
+decode = sp.decode
+vocab_size = sp.get_piece_size()
+# -------------------------- END OF INPUT PROCESSING --------------------------
 
 
 # Train and test splits
-data = torch.tensor(encode(text), dtype=torch.long)
+data = torch.tensor(tokenized_text, dtype=torch.long)
 # Split into train and test sets
 n = int(0.9 * len(data))
 train_data = data[:n]
@@ -186,6 +183,9 @@ class BigramLanguageModel(nn.Module):
             idx_next = torch.multinomial(probs, num_samples=1) # (B, 1)
             # append sampled index to the running sequence
             idx = torch.cat((idx, idx_next), dim=1) # (B, T+1)
-            # remove first element to maintain block size
-        return idx
+            if idx.shape[1] % 100 == 0:
+                print(f"Generated {idx.shape[1]} tokens so far.")
+                # print(f"Last 100 tokens: {decode(idx[0, -100:].tolist())}")
+        result = decode(idx[0,:].tolist())
+        return result
     
